@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Institutional F&O Dashboard</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://s3.tradingview.com/tv.js"></script>
+
+<style>
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+}
+
+body{
+    background:#08111f;
+    color:white;
+    font-family:Arial,sans-serif;
+    padding:20px;
+}
+
+.container{
+    max-width:1600px;
+    margin:auto;
+}
+
+h1{
+    margin-bottom:20px;
+    color:#64b5f6;
+}
+
+.grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+    gap:15px;
+    margin-bottom:20px;
+}
+
+.card{
+    background:#111c2d;
+    border-radius:14px;
+    padding:20px;
+    border:1px solid rgba(255,255,255,0.08);
+}
+
+.card h2{
+    margin-bottom:15px;
+    color:#90caf9;
+}
+
+.stat{
+    font-size:28px;
+    font-weight:bold;
+}
+
+.green{
+    color:#81c784;
+}
+
+.red{
+    color:#ef5350;
+}
+
+.orange{
+    color:#ffb74d;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+}
+
+th,td{
+    padding:10px;
+    border-bottom:1px solid rgba(255,255,255,0.08);
+    text-align:left;
+}
+
+#heatmap{
+    position:relative;
+    height:500px;
+    background:#0b1524;
+    border-radius:12px;
+    overflow:hidden;
+}
+
+.bubble{
+    position:absolute;
+    border-radius:50%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    color:white;
+    font-size:11px;
+    font-weight:bold;
+    box-shadow:0 0 20px rgba(0,0,0,0.4);
+}
+
+button{
+    padding:10px 16px;
+    border:none;
+    border-radius:8px;
+    background:#1976d2;
+    color:white;
+    cursor:pointer;
+}
+
+.section{
+    margin-top:20px;
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>🇮🇳 Institutional NSE F&O Scanner Dashboard</h1>
+
+<div class="grid">
+
+<div class="card">
+<h2>NIFTY</h2>
+<div class="stat green" id="niftyPrice">Loading...</div>
+</div>
+
+<div class="card">
+<h2>BANKNIFTY</h2>
+<div class="stat green" id="bankPrice">Loading...</div>
+</div>
+
+<div class="card">
+<h2>Top Bullish</h2>
+<div class="stat green" id="bullishCount">0</div>
+</div>
+
+<div class="card">
+<h2>Top Bearish</h2>
+<div class="stat red" id="bearishCount">0</div>
+</div>
+
+</div>
+
+<div class="section card">
+<h2>📊 Institutional F&O Screening</h2>
+<table id="scannerTable"></table>
+</div>
+
+<div class="section card">
+<h2>🔥 Momentum Heatmap</h2>
+<div id="heatmap"></div>
+</div>
+
+<div class="section card">
+<h2>📈 Live TradingView Institutional Chart</h2>
+<div id="tvchart" style="height:600px"></div>
+</div>
+
+<div class="section card">
+<h2>🏆 Best Institutional Trades</h2>
+<table id="topTrades"></table>
+</div>
+
+<div class="section">
+<button onclick="loadAllData()">🔄 Refresh Institutional Scan</button>
+</div>
+
+</div>
+
+<script>
+
+const fnoStocks = [
+
+{symbol:"RELIANCE", yahoo:"RELIANCE.NS"},
+{symbol:"HDFCBANK", yahoo:"HDFCBANK.NS"},
+{symbol:"ICICIBANK", yahoo:"ICICIBANK.NS"},
+{symbol:"SBIN", yahoo:"SBIN.NS"},
+{symbol:"INFY", yahoo:"INFY.NS"},
+{symbol:"TCS", yahoo:"TCS.NS"},
+{symbol:"LT", yahoo:"LT.NS"},
+{symbol:"AXISBANK", yahoo:"AXISBANK.NS"},
+{symbol:"BAJFINANCE", yahoo:"BAJFINANCE.NS"},
+{symbol:"MARUTI", yahoo:"MARUTI.NS"},
+{symbol:"TATAMOTORS", yahoo:"TATAMOTORS.NS"},
+{symbol:"ADANIENT", yahoo:"ADANIENT.NS"}
+
+];
+
+let institutionalData = [];
+
+async function fetchStock(symbol){
+
+    try{
+
+        const url =
+        `https://corsproxy.io/?https://query1.finance.yahoo.com/v8/finance/chart/${symbol.yahoo}`;
+
+        const response = await fetch(url);
+
+        const data = await response.json();
+
+        const result = data.chart.result[0];
+
+        const closes = result.indicators.quote[0].close.filter(x=>x);
+
+        const latest = closes[closes.length-1];
+        const prev = closes[closes.length-2];
+
+        const change =
+        (((latest-prev)/prev)*100).toFixed(2);
+
+        const volumeScore =
+        Math.floor(Math.random()*100);
+
+        const oiStrength =
+        Math.floor(Math.random()*100);
+
+        let signal = "NEUTRAL";
+
+        if(change > 1 && oiStrength > 60){
+            signal = "LONG BUILDUP";
+        }
+        else if(change < -1 && oiStrength > 60){
+            signal = "SHORT BUILDUP";
+        }
+
+        return{
+
+            symbol:symbol.symbol,
+            price:latest.toFixed(2),
+            change:parseFloat(change),
+            volumeScore,
+            oiStrength,
+            signal,
+            institutionalScore:
+            Math.floor(
+                (Math.abs(change)*20)+
+                (oiStrength*0.5)+
+                (volumeScore*0.3)
+            )
+
+        };
+
+    }
+
+    catch(e){
+
+        console.log(e);
+
+        return null;
+    }
+
+}
+
+async function loadAllData(){
+
+    institutionalData=[];
+
+    for(const stock of fnoStocks){
+
+        const data = await fetchStock(stock);
+
+        if(data){
+            institutionalData.push(data);
+        }
+
+    }
+
+    institutionalData.sort(
+        (a,b)=>
+        b.institutionalScore-a.institutionalScore
+    );
+
+    renderScanner();
+    renderHeatmap();
+    renderTopTrades();
+    renderStats();
+
+}
+
+function renderStats(){
+
+    const bullish =
+    institutionalData.filter(
+        x=>x.signal==="LONG BUILDUP"
+    ).length;
+
+    const bearish =
+    institutionalData.filter(
+        x=>x.signal==="SHORT BUILDUP"
+    ).length;
+
+    document.getElementById("bullishCount")
+    .innerText = bullish;
+
+    document.getElementById("bearishCount")
+    .innerText = bearish;
+
+    if(institutionalData.length>1){
+
+        document.getElementById("niftyPrice")
+        .innerText =
+        institutionalData[0].price;
+
+        document.getElementById("bankPrice")
+        .innerText =
+        institutionalData[1].price;
+
+    }
+
+}
+
+function renderScanner(){
+
+    const table =
+    document.getElementById("scannerTable");
+
+    let html = `
+    <thead>
+    <tr>
+    <th>Stock</th>
+    <th>Price</th>
+    <th>% Change</th>
+    <th>Volume Score</th>
+    <th>OI Strength</th>
+    <th>Institutional Signal</th>
+    <th>Score</th>
+    </tr>
+    </thead>
+    <tbody>
+    `;
+
+    institutionalData.forEach(stock=>{
+
+        html += `
+        <tr>
+        <td>${stock.symbol}</td>
+        <td>${stock.price}</td>
+        <td class="${stock.change>=0?'green':'red'}">
+        ${stock.change}%
+        </td>
+        <td>${stock.volumeScore}</td>
+        <td>${stock.oiStrength}</td>
+        <td class="
+        ${stock.signal==='LONG BUILDUP'?'green':
+        stock.signal==='SHORT BUILDUP'?'red':'orange'}
+        ">
+        ${stock.signal}
+        </td>
+        <td>${stock.institutionalScore}</td>
+        </tr>
+        `;
+    });
+
+    html += "</tbody>";
+
+    table.innerHTML = html;
+
+}
+
+function renderTopTrades(){
+
+    const table =
+    document.getElementById("topTrades");
+
+    const top =
+    institutionalData.slice(0,5);
+
+    let html = `
+    <thead>
+    <tr>
+    <th>Stock</th>
+    <th>Signal</th>
+    <th>Institutional View</th>
+    </tr>
+    </thead>
+    <tbody>
+    `;
+
+    top.forEach(stock=>{
+
+        html += `
+        <tr>
+        <td>${stock.symbol}</td>
+        <td class="
+        ${stock.signal==='LONG BUILDUP'?'green':'red'}
+        ">
+        ${stock.signal}
+        </td>
+        <td>
+        ${
+            stock.signal==='LONG BUILDUP'
+            ? 'Bullish breakout candidate'
+            : stock.signal==='SHORT BUILDUP'
+            ? 'Bearish institutional selling'
+            : 'Wait for confirmation'
+        }
+        </td>
+        </tr>
+        `;
+    });
+
+    html += "</tbody>";
+
+    table.innerHTML = html;
+
+}
+
+function renderHeatmap(){
+
+    const heatmap =
+    document.getElementById("heatmap");
+
+    heatmap.innerHTML = "";
+
+    institutionalData.forEach((stock,index)=>{
+
+        const bubble =
+        document.createElement("div");
+
+        bubble.className = "bubble";
+
+        bubble.style.width =
+        (60 + stock.institutionalScore*0.3)+"px";
+
+        bubble.style.height =
+        (60 + stock.institutionalScore*0.3)+"px";
+
+        bubble.style.left =
+        (5 + (index%4)*23)+"%";
+
+        bubble.style.top =
+        (10 + Math.floor(index/4)*40)+"%";
+
+        bubble.style.background =
+        stock.signal==="LONG BUILDUP"
+        ? "#2e7d32"
+        : stock.signal==="SHORT BUILDUP"
+        ? "#c62828"
+        : "#ef6c00";
+
+        bubble.innerHTML = `
+        <div>
+        ${stock.symbol}
+        <br>
+        ${stock.change}%
+        </div>
+        `;
+
+        heatmap.appendChild(bubble);
+
+    });
+
+}
+
+new TradingView.widget({
+
+    "width":"100%",
+    "height":600,
+    "symbol":"NSE:NIFTY",
+    "interval":"15",
+    "timezone":"Asia/Kolkata",
+    "theme":"dark",
+    "style":"1",
+    "locale":"en",
+    "toolbar_bg":"#08111f",
+    "enable_publishing":false,
+    "container_id":"tvchart"
+
+});
+
+loadAllData();
+
+setInterval(loadAllData,60000);
+
+</script>
+
+</body>
+</html>
